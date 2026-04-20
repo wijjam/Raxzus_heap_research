@@ -121,7 +121,7 @@ isr_wrapper_14:
     addl $4, %esp
     iret                            # Return from interrupt
 # double fault exception wrapper
-    isr_wrapper_8:
+isr_wrapper_8:
     pusha                           # Save all registers
     pushl %esp
     call double_fault_handler # Call our C page_fault_handler

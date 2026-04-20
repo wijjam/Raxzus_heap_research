@@ -1,7 +1,7 @@
 #include "../include/process_manager.h"
 #include "../include/vga.h"
 #include "../include/pic.h"
-#include "../include/memory.h"
+#include "../include/heap_domain.h"
 #include "../include/paging_manager.h"
 #include "../include/pmm.h"
 #include "../include/gdt.h"
@@ -40,7 +40,7 @@ void timer_interrupt_handler() {
 
 void create_process(void (*func)(), int is_user){
 
-    struct PCB* new_process = (void*) kmalloc(sizeof(struct PCB));
+    struct PCB* new_process = (struct PCB*) kmalloc(sizeof(struct PCB));
     if (new_process == (void*)0) { return; }
 
     new_process->PID = current_index;
@@ -48,53 +48,26 @@ void create_process(void (*func)(), int is_user){
     new_process->next = (void*)0;
     new_process->prev = (void*)0;
 
-    // =========================================================
-    // FIX 1: Give every process its own page directory.
-    //
-    // create_process_page_directory() allocates a fresh 4 KB
-    // physical frame, zeroes it, then copies the kernel's upper
-    // 256 entries (indices 768-1023, i.e. 0xC0000000 and above).
-    // That means every process can still reach kernel code/data,
-    // but the lower 3 GB are completely private to this process.
-    // =========================================================
+    // Create page directory
     uint32_t* proc_dir = create_process_page_directory();
     new_process->page_dir = proc_dir;
 
-    // =========================================================
-    // FIX 2: Give every process its own private stack.
-    //
-    // We allocate a PHYSICAL page and map it at PROC_STACK_VIRT
-    // inside proc_dir.  That mapping does NOT exist in the kernel
-    // page directory or any other process's page directory, so the
-    // stack is truly isolated.
-    //
-    // While we are still running under the kernel's CR3 we can
-    // reach that physical page at (stack_phys + 0xC0000000).
-    // We build the fake interrupt frame there, then compute what
-    // the CPU will see as the stack pointer when it runs this
-    // process under proc_dir.
-    // ========================================================
-
+    // Allocate stack
     uint32_t stack_phys = get_next_free_process_frame();
     uint32_t* sp;
-    // IRET frame (highest address - pushed first)
+    
     if (is_user) {
         map_page(proc_dir, PROC_STACK_VIRT, stack_phys, PAGE_USER);
-
-    // Access the physical page through the kernel's identity window
         sp = (uint32_t*)(stack_phys + 0xC0000000 + PROC_STACK_SIZE);
 
-            uint32_t code_phys = get_next_free_process_frame();
+        uint32_t code_phys = get_next_free_process_frame();
         map_page(proc_dir, PROC_CODE_VIRT, code_phys, PAGE_USER);
 
-        kprintf("PROC_CODE_VIRT is: %x\n", PROC_CODE_VIRT);
-
-            // copy the function into it
+        // Copy function
         uint8_t* dst = (uint8_t*)(code_phys + 0xC0000000);
         uint8_t* src = (uint8_t*)func;
         for (int i = 0; i < 4096; i++)
-            dst[i] = src[i]; // Since we are in the same bin for our kernel code and user since we do not have file system yet. We instead copy the function code into a maped user memory.
-
+            dst[i] = src[i];
 
         *(--sp) = 0x23;         // SS
         *(--sp) = PROC_STACK_VIRT + PROC_STACK_SIZE;  // ESP
@@ -102,69 +75,37 @@ void create_process(void (*func)(), int is_user){
         *(--sp) = 0x1B;         // CS
         *(--sp) = PROC_CODE_VIRT; // EIP
     } else {
-                
         map_page(proc_dir, PROC_STACK_VIRT, stack_phys, PAGE_KERNEL);
-
-    // Access the physical page through the kernel's identity window
         sp = (uint32_t*)(stack_phys + 0xC0000000 + PROC_STACK_SIZE);
+        
         *(--sp) = 0x202;        // EFLAGS
         *(--sp) = 0x08;         // CS
         *(--sp) = (uint32_t)func; // EIP
     }
 
-    // POPA frame (lower address - pushed second)
-    // popa pops: EDI, ESI, EBP, (skip ESP), EBX, EDX, ECX, EAX
+    // POPA frame
     *(--sp) = 0;  // EAX
     *(--sp) = 0;  // ECX
     *(--sp) = 0;  // EDX
     *(--sp) = 0;  // EBX
-    *(--sp) = 0;  // ESP  (popa discards this dword, value irrelevant)
+    *(--sp) = 0;  // ESP
     *(--sp) = 0;  // EBP
     *(--sp) = 0;  // ESI
-    *(--sp) = 0;  // EDI  <- sp points here; this is saved_esp
+    *(--sp) = 0;  // EDI
 
-    // Convert the kernel-virtual sp to the process-virtual equivalent.
-    // The offset within the physical page is the same in both address
-    // spaces; only the base address differs.
     uint32_t sp_offset = (uint32_t)sp - (stack_phys + 0xC0000000);
     new_process->saved_esp = PROC_STACK_VIRT + sp_offset;
     new_process->stack_top = PROC_STACK_VIRT + PROC_STACK_SIZE;
 
-    // =========================================================
-    // FIX 3: Give every process its own private heap.
-    //
-    // Same idea as the stack: allocate a physical page, map it
-    // at PROC_HEAP_VIRT inside proc_dir, and initialise the heap
-    // header through the kernel's physical window.
-    //
-    // We CANNOT write to PROC_HEAP_VIRT directly here because
-    // that virtual address only exists in proc_dir, not in the
-    // currently active kernel page directory.
-    // =========================================================
-    uint32_t heap_phys = get_next_free_process_frame();
-    map_page(proc_dir, PROC_HEAP_VIRT, heap_phys, PAGE_KERNEL);
-
-    struct heap* proc_heap_hdr = (struct heap*)(heap_phys + 0xC0000000);
-    proc_heap_hdr->size     = PROC_HEAP_SIZE;
-    proc_heap_hdr->prev_size = 0;
-    set_flag (&proc_heap_hdr->size, FREE);
-    set_magic(&proc_heap_hdr->size, MAGIC_FIRST);
-
-    new_process->heap_start = PROC_HEAP_VIRT;
-    new_process->heap_end   = PROC_HEAP_VIRT + PROC_HEAP_SIZE;
-    new_process->next_virt  = PROC_HEAP_VIRT + PROC_HEAP_SIZE;
-
-        void *kstack = kmalloc(4096);
-    if (!kstack) {
-        kprintf_red("Failed to allocate kernel stack for process");
-        asm volatile("hlt");
+    // Allocate kernel stack using NEW heap!
+    void *kstack = kmalloc(4096);
+    if (kstack == (void*)0) {
+        kprintf_red("Failed to allocate kernel stack\n");
+        while(1) asm volatile("hlt");
     }
     new_process->kernel_stack_top = (uint32_t)kstack + 4096;
 
-
-    // =========================================================
-    // Add to the circular linked list of processes
-    // =========================================================
+    // Add to process list
     if (current_index == 0) {
         process_lists = new_process;
         current_index++;
@@ -172,7 +113,6 @@ void create_process(void (*func)(), int is_user){
     }
 
     current_index++;
-
     struct PCB* current = process_lists;
     while (current->next != (void*)0) {
         current = current->next;

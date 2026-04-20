@@ -8,9 +8,11 @@
 #include "include/keyboard.h"
 #include "include/raxzus_shell.h"
 #include "include/raxzus_shell_ui.h"
-#include "include/memory.h"
-#include "include/process_manager.h"
+//#include "include/memory.h"
+//#include "include/process_manager.h"
+
 #include "include/forgeproc.h"
+#include "include/heap_domain.h"
 #include "include/paging_manager.h"
 #include "include/pmm.h"
 #include "include/gdt.h"
@@ -81,11 +83,14 @@ void kernel_main(void) {
     pic_disable_irq(0); // Disable timer for now (would overwhelm us)
     pic_enable_irq(1);  // Enable keyboard
     init_keyboard();
-    kernel_heap_init(); // Inizialize the heap for the kernel (PS: The processes has a seperate heap init function)
-    init_gdt();
-    init_interrupts();  // Setup the IDT and connect the interrupts to stubs
-    init_paging();      // Initializes paging where we flip the bit, save to CR3.
-    init_pmm();         // Maps the virtual memory so we an have dynamic paging
+    //kernel_heap_init(); // Inizialize the heap for the kernel (PS: The processes has a seperate heap init function)
+    init_paging();      // Switch to proper 4KB page tables
+    init_pmm();         // Initialize physical memory bitmap
+    init_all_heaps();   // Heap must be ready before init_gdt (TSS stack alloc)
+    init_gdt();         // Reload GDT + TSS; far-jump reloads CS to 0x08
+    init_interrupts();  // Must come after init_gdt so IDT entries get CS=0x08
+
+    
 
     kprintf("\n");
 
@@ -107,10 +112,11 @@ void kernel_main(void) {
     
     //kprintf("The current_process before idle is: %x\n", current_process);  
     kprintf("Jumping to IDLE.... \n");
-    init_process_scheduler(&idle_process);
+    //init_process_scheduler(&idle_process);
 
-    kprintf("dfsfsdf");
-
+    kprintf("dfsfsdf\n");
+     __asm__ volatile ("sti"); // opens the flood gates.
+      kprintf_cyan("RaxzusOS > ");
 
     // Main kernel loop - just wait for interrupts
     while (1) {

@@ -6,6 +6,7 @@
 #include "../include/process_manager.h"
 #include "../include/ata_disk_driver.h"
 #include "../include/kutils.h"
+#include "../include/heap_domain.h"
 #include <stdarg.h>
 
 
@@ -24,8 +25,12 @@ void process_input(char* input) {
     } 
     
     else if (checkString(argv[0], "mem")) {
-        test_kmalloc_kfree();
-    } 
+        //test_kmalloc_kfree();
+    }
+
+    else if (checkString(argv[0], "memtest")) {
+        cmd_memtest();
+    }
     
     else if (checkString(argv[0], "time")) {
         print_rtc_time();

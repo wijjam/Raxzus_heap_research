@@ -3,9 +3,10 @@
 
 #define END_OF_ADDRESSABLE_MEMORY 0xFFFFFFFF
 
-#define PAGE_KERNEL  0x3  // present + read/write, kernel only 0d000000000011
-#define PAGE_USER    0x7  // present + read/write + userspace  0d000000000111
-#define PAGE_READONLY 0x1 // present, read only                0d000000000001
+#define PAGE_KERNEL  0x3   // present + read/write, kernel only
+#define PAGE_USER    0x7   // present + read/write + userspace
+#define PAGE_READONLY 0x1  // present, read only
+#define PAGE_GLOBAL  0x100 // global bit — survives CR3 switches (requires CR4.PGE)
 
 void setup_entries();
 

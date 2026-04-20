@@ -118,7 +118,7 @@ void map_kernel_memory() {
             last_dir_index = dir_index;
         }
 
-        current_page_table[table_index] = addr | PAGE_KERNEL;
+        current_page_table[table_index] = addr | PAGE_KERNEL | PAGE_GLOBAL;
     }
 }
 
@@ -155,7 +155,13 @@ void init_paging() {
     kprintf_white("[MEM] Fliping the CR0 bit........");
     set_CR0_32_bit_register(1);
     kprintf_green("[OK]\n");
-    
+    kprintf_white("[MEM] Enabling PGE (global pages)........");
+    uint32_t cr4;
+    asm volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 |= 0x80;  // CR4.PGE — kernel PTEs marked global won't flush on CR3 switch
+    asm volatile("mov %0, %%cr4" : : "r"(cr4));
+    kprintf_green("[OK]\n");
+
 }
 
 

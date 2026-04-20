@@ -47,7 +47,7 @@ uint32_t clear_frame(uint32_t frame_addr) {
 
 
 void init_pmm() {
-    virtual_kernel_memory_end = (uint32_t*)((uint32_t)_heap_start + get_heap_size());
+    virtual_kernel_memory_end = (uint32_t*)((uint32_t)_heap_start);
     uint32_t physical_kernel_memory_end = (uint32_t)virtual_kernel_memory_end - 0xC0000000;
     /*kprintf("_heap_start: %x\n", (uint32_t)_heap_start);
     kprintf("get_heap_size(): %d\n", get_heap_size());
