@@ -1,4 +1,10 @@
-Raxzus Flow — MMU-Backed Domain Allocator
+Author: [William B.]
+Date: April 2026
+Status: Prototype — 32-bit, single core
+
+Raxzus Flow — A Novel MMU-Backed Domain Allocation Method
+
+Raxzus Flow is the name of the allocation method. This document describes its first implementation in RaxzusOS, a custom x86 32-bit kernel.
 
 This is a novel heap allocator implemented in a custom x86 32-bit kernel (RaxzusOS). The core idea is simple: instead of using software data structures to manage allocations, we delegate that responsibility to the hardware MMU itself.
 
