@@ -1,4 +1,4 @@
-Author: [William B.]
+Author: William B.
 Date: April 2026
 Status: Prototype — 32-bit, single core
 
