@@ -11,6 +11,7 @@ typedef struct {
     
     void* next_free_block;       // Next available block (VIRTUAL)
     uint32_t next_virt_addr;     // Where to map next page
+    uint32_t* next_free_virt;
 } heap_domain_t;
 
 void init_heap_domain(heap_domain_t* domain, uint32_t block_size, uint32_t virt_base);

@@ -143,22 +143,13 @@ void* heap_domain_alloc(heap_domain_t* domain) {
 
 void heap_domain_free(heap_domain_t* domain, void* ptr) {
 
-    // Switch to the domain's CR3 so writes to the domain virtual address are valid.
-    uint32_t old_cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(old_cr3));
-    uint32_t phys_cr3 = (uint32_t)domain->page_directory - 0xC0000000;
-    asm volatile("mov %0, %%cr3" : : "r"(phys_cr3) : "memory");
+    if (!ptr) { 
+        return;
+    }
 
-    // PUSH the freed block onto the head of the free list — O(1), one pointer write.
-    // Store the current head address inside the freed block's first 4 bytes.
     *(uint32_t*)ptr = (uint32_t)domain->next_free_block;
-
-    // The freed block is now the new head.  Next alloc will return this block
-    // immediately — LIFO order, no searching, no coalescing, ever.
     domain->next_free_block = ptr;
 
-    // Restore the kernel CR3.
-    asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
 }
 
 // -----------------------------------------------------------------------
@@ -174,6 +165,7 @@ void heap_domain_free(heap_domain_t* domain, void* ptr) {
 typedef struct {
     uint32_t* page_directory;
     uint32_t  next_virt_addr;
+    uint32_t* next_free_virt;
 } large_domain_t;
 
 static large_domain_t large_domain;
@@ -195,6 +187,7 @@ static void init_large_domain(void) {
         large_domain.page_directory[i] = kernel_dir[i];
 
     large_domain.next_virt_addr = LARGE_VIRT_BASE;
+    large_domain.next_free_virt = NULL;
 }
 
 // Allocate `size` bytes as N contiguous 4 KB pages.
@@ -211,7 +204,26 @@ void* kmalloc_large(uint32_t size) {
     uint32_t phys_cr3 = (uint32_t)large_domain.page_directory - 0xC0000000;
     asm volatile("mov %0, %%cr3" : : "r"(phys_cr3) : "memory");
 
-    uint32_t virt_start = large_domain.next_virt_addr;
+    uint32_t virt_start;
+
+    if (large_domain.next_free_virt != NULL) {
+        uint32_t candidate = (uint32_t)large_domain.next_free_virt;
+        uint32_t freed_pages = *((uint32_t*)candidate + 1);
+        // Only reuse if the freed slot has enough virtual space.
+        if (freed_pages >= pages) {
+            virt_start = candidate;
+            large_domain.next_free_virt = (void*)(*(uint32_t*)candidate);
+            large_unmap_page(virt_start, 1);  // free the hostage frame
+        } else {
+            // Slot too small — skip it, fall through to fresh virtual space.
+            // The slot stays in the LIFO for a future smaller allocation.
+            virt_start = large_domain.next_virt_addr;
+            large_domain.next_virt_addr += pages * 4096;
+        }
+    } else {
+        virt_start = large_domain.next_virt_addr;
+        large_domain.next_virt_addr += pages * 4096;
+    }
 
     extern uint32_t _kernel_page_dir[];
 
@@ -234,7 +246,6 @@ void* kmalloc_large(uint32_t size) {
     *(uint32_t*)virt_start = pages;
 
     // Advance the virtual cursor so the next large alloc is contiguous but separate.
-    large_domain.next_virt_addr += pages * 4096;
 
     asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
 
@@ -244,41 +255,43 @@ void* kmalloc_large(uint32_t size) {
 
 // Free a large allocation.  Reads the hidden page count, zeroes out the
 // page table entries, and flushes the TLB for each page.
+void large_unmap_page(uint32_t virt, int free_frame) {
+    extern uint32_t _kernel_page_dir[];
+    uint32_t dir_idx   = virt >> 22;
+    uint32_t table_idx = (virt >> 12) & 0x3FF;
+
+    if (large_domain.page_directory[dir_idx] & 0x1) {
+        uint32_t  tbl_phys = large_domain.page_directory[dir_idx] & ~0xFFF;
+        uint32_t* tbl_virt = (uint32_t*)(tbl_phys + 0xC0000000);
+        tbl_virt[table_idx] = 0;
+    }
+
+    uint32_t* kdir = (uint32_t*)_kernel_page_dir;
+    if (kdir[dir_idx] & 0x1) {
+        uint32_t  tbl_phys = kdir[dir_idx] & ~0xFFF;
+        uint32_t* tbl_virt = (uint32_t*)(tbl_phys + 0xC0000000);
+        if (free_frame) clear_frame(tbl_virt[table_idx] & ~0xFFF);
+        tbl_virt[table_idx] = 0;
+    }
+
+    invlpg(virt);
+}
+
 void kfree_large(void* ptr) {
     if (!ptr) return;
 
-    // Recover the real start (before the 4-byte header).
     uint32_t real_start = (uint32_t)ptr - sizeof(uint32_t);
     uint32_t pages = *(uint32_t*)real_start;
 
-    extern uint32_t _kernel_page_dir[];
+    // Free pages 1..N-1 — page 0 stays mapped so we can write the LIFO
+    // chain pointer into it while it still has physical backing.
+    for (uint32_t i = 1; i < pages; i++)
+        large_unmap_page(real_start + (i * 4096), 1);
 
-    // Unmap each page from both page directories.
-    for (uint32_t i = 0; i < pages; i++) {
-        uint32_t virt = real_start + (i * 4096);
-
-        // Zero the PTE in the large domain's page directory.
-        uint32_t dir_idx   = virt >> 22;
-        uint32_t table_idx = (virt >> 12) & 0x3FF;
-
-        if (large_domain.page_directory[dir_idx] & 0x1) {
-            uint32_t  tbl_phys = large_domain.page_directory[dir_idx] & ~0xFFF;
-            uint32_t* tbl_virt = (uint32_t*)(tbl_phys + 0xC0000000);
-            tbl_virt[table_idx] = 0;
-        }
-
-        // Zero the PTE in the kernel's page directory.
-        uint32_t* kdir = (uint32_t*)_kernel_page_dir;
-        if (kdir[dir_idx] & 0x1) {
-            uint32_t  tbl_phys = kdir[dir_idx] & ~0xFFF;
-            uint32_t* tbl_virt = (uint32_t*)(tbl_phys + 0xC0000000);
-            tbl_virt[table_idx] = 0;
-        }
-
-        invlpg(virt);
-    }
-    // Note: physical frames are NOT returned to the PMM in this prototype.
-    // A production version would call clear_frame() for each mapped page.
+    // Page 0 is still mapped — store chain pointer at offset 0, page count at offset 4.
+    *(uint32_t*)real_start       = (uint32_t)large_domain.next_free_virt;
+    *((uint32_t*)real_start + 1) = pages;
+    large_domain.next_free_virt  = (void*)real_start;
 }
 
 void init_all_heaps() {
@@ -304,7 +317,7 @@ void* kmalloc(uint32_t size) {
     if (size <= 1024) return heap_domain_alloc(&heap_1k);
     if (size <= 2048) return heap_domain_alloc(&heap_2k);
     if (size <= 4096) return heap_domain_alloc(&heap_4k);
-    return NULL;
+    return kmalloc_large(size);
 }
 
 void kfree(void* ptr) {
@@ -316,4 +329,5 @@ void kfree(void* ptr) {
     else if (addr >= 0x50000000 && addr < 0x60000000) heap_domain_free(&heap_1k,  ptr);
     else if (addr >= 0x60000000 && addr < 0x70000000) heap_domain_free(&heap_2k,  ptr);
     else if (addr >= 0x70000000 && addr < 0x80000000) heap_domain_free(&heap_4k,  ptr);
+    else if (addr >= 0x80000000)                       kfree_large(ptr);
 }

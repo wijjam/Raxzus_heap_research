@@ -29,7 +29,16 @@ void process_input(char* input) {
     }
 
     else if (checkString(argv[0], "memtest")) {
-        cmd_memtest();
+        if (parser_count < 2) {
+            kprintf("Usage: memtest 1  (fragmentation + WCET O(1) timing)\n");
+            kprintf("       memtest 2  (large allocation test)\n");
+        } else if (checkString(argv[1], "1")) {
+            cmd_memtest_v1();
+        } else if (checkString(argv[1], "2")) {
+            cmd_memtest_v2();
+        } else {
+            kprintf("Unknown test. Use memtest 1 or memtest 2\n");
+        }
     }
     
     else if (checkString(argv[0], "time")) {

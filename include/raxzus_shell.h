@@ -9,7 +9,8 @@ void process_input(char* input);
 void cmd_help(void);
 void cmd_clear(void);
 void cmd_neofetch(void);
-void cmd_memtest(void);
+void cmd_memtest_v1(void);
+void cmd_memtest_v2(void);
 
 typedef struct {
     const char* name;
