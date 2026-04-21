@@ -93,4 +93,6 @@ Below are tests made where we test the allocation of blocks bigger than 4KB to s
 <img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/3553bbf5-4e37-47b2-b78e-4040bd9ff807" />
 <img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/dfbf5b54-1e48-44b6-8331-caf57711ca62" />
 <img width="1210" height="907" alt="image" src="https://github.com/user-attachments/assets/8df72b3d-0cbd-4e45-88b5-de2a20118c2d" />
+In the images above we clearly see the mechanism working, around 6100 to 6500 cycles for one page but then if we allocate more we get cheaper pages in the ange of 1000 to 1300 cycles.
+
 All these tests were taken at different times.
