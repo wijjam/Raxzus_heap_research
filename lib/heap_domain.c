@@ -356,5 +356,5 @@ void kfree_heap(void* ptr) {
     else if (addr >= 0x50000000 && addr < 0x60000000) heap_domain_free(&heap_1k,  ptr);
     else if (addr >= 0x60000000 && addr < 0x70000000) heap_domain_free(&heap_2k,  ptr);
     else if (addr >= 0x70000000 && addr < 0x80000000) heap_domain_free(&heap_4k,  ptr);
-    else if (addr >= 0x80000000 && addr)                       kfree_large(ptr);
+    else if (addr >= 0x80000000)                       kfree_large(ptr);
 }
