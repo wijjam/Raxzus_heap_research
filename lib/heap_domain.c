@@ -109,55 +109,54 @@ void* heap_domain_alloc(heap_domain_t* domain) {
         return ptr;
     }
 
-    // If the free list is empty we need to back this domain with a new physical page.
-    if (domain->next_free_block == NULL) {
 
-        // Ask the PMM for a free physical frame.
-        uint32_t phys = get_next_free_process_frame();
-        if (phys == 0) {
-            kprintf_red("[HEAP] FATAL: PMM out of frames during alloc\n");
-            return NULL;
-        }
 
-        // The virtual address where this page will appear inside this domain.
-        // Each domain owns a contiguous virtual region (e.g. 0x10000000+ for 64B).
-        // next_virt_addr advances by one page each time we expand the domain.
-        uint32_t virt = domain->next_virt_addr;
-
-        // Map the physical frame into this domain's page directory so it is
-        // reachable when this domain's CR3 is loaded.  This is what gives each
-        // size class its own isolated, virtually-contiguous address space.
-        map_page(domain->page_directory, virt, phys, PAGE_KERNEL);
-        invlpg(virt);
-
-        // Also map the same physical frame into the kernel's page directory so
-        // the returned pointer remains valid.
-        extern uint32_t _kernel_page_dir[];
-        map_page((uint32_t*)_kernel_page_dir, virt, phys, PAGE_KERNEL);
-        invlpg(virt);
-
-        // Initialise the free list inside the newly mapped page.
-        // No separate metadata is allocated — each free block stores the virtual
-        // address of the next free block in its own first 4 bytes.
-        // When the block is handed to the caller those 4 bytes become user data.
-        // This is why per-allocation overhead is exactly zero bytes.
-        for (uint32_t i = 0; i < domain->blocks_per_page - 1; i++) {
-            uint32_t block_addr = virt + (i * domain->block_size);
-            uint32_t next_block = virt + ((i + 1) * domain->block_size);
-            *(uint32_t*)block_addr = next_block; // block[i] -> block[i+1]
-        }
-
-        // The last block in the page terminates the list with NULL.
-        uint32_t last_block = virt + ((domain->blocks_per_page - 1) * domain->block_size);
-        *(uint32_t*)last_block = 0; // NULL — end of free list
-
-        // Point the domain's free list head at the first block in the new page.
-        domain->next_free_block = (void*)virt;
-
-        // Advance the domain's virtual cursor so the next page expansion lands
-        // immediately after this one — preserving virtual contiguity.
-        domain->next_virt_addr += 4096;
+    // Ask the PMM for a free physical frame.
+    uint32_t phys = get_next_free_process_frame();
+    if (phys == 0) {
+        kprintf_red("[HEAP] FATAL: PMM out of frames during alloc\n");
+        return NULL;
     }
+
+    // The virtual address where this page will appear inside this domain.
+    // Each domain owns a contiguous virtual region (e.g. 0x10000000+ for 64B).
+    // next_virt_addr advances by one page each time we expand the domain.
+    uint32_t virt = domain->next_virt_addr;
+
+    // Map the physical frame into this domain's page directory so it is
+    // reachable when this domain's CR3 is loaded.  This is what gives each
+    // size class its own isolated, virtually-contiguous address space.
+    map_page(domain->page_directory, virt, phys, PAGE_KERNEL);
+    invlpg(virt);
+
+    // Also map the same physical frame into the kernel's page directory so
+    // the returned pointer remains valid.
+    extern uint32_t _kernel_page_dir[];
+    map_page((uint32_t*)_kernel_page_dir, virt, phys, PAGE_KERNEL);
+    invlpg(virt);
+
+    // Initialise the free list inside the newly mapped page.
+    // No separate metadata is allocated — each free block stores the virtual
+    // address of the next free block in its own first 4 bytes.
+    // When the block is handed to the caller those 4 bytes become user data.
+    // This is why per-allocation overhead is exactly zero bytes.
+    for (uint32_t i = 0; i < domain->blocks_per_page - 1; i++) {
+        uint32_t block_addr = virt + (i * domain->block_size);
+        uint32_t next_block = virt + ((i + 1) * domain->block_size);
+        *(uint32_t*)block_addr = next_block; // block[i] -> block[i+1]
+    }
+
+    // The last block in the page terminates the list with NULL.
+    uint32_t last_block = virt + ((domain->blocks_per_page - 1) * domain->block_size);
+    *(uint32_t*)last_block = 0; // NULL — end of free list
+
+    // Point the domain's free list head at the first block in the new page.
+    domain->next_free_block = (void*)virt;
+
+    // Advance the domain's virtual cursor so the next page expansion lands
+    // immediately after this one — preserving virtual contiguity.
+    domain->next_virt_addr += 4096;
+    
 
     // POP the head of the free list — O(1), one pointer read.
     // ptr is the block we are about to return to the caller.
