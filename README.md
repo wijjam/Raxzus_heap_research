@@ -23,7 +23,7 @@ heap_4k	4096 bytes	0x70000000
 
 Each domain has its own page directory. When an allocation is requested, the allocator uses our multi mapped functionality and, pops the free list head and returns. The entire operation is O(1) by construction — there is no searching, no coalescing, no walking of any structure.
 
-Each domain's physical frames are mapped into both the domain's own page directory and the kernel's page directory at the same time. This means returned pointers stay valid in kernel space without needing a CR3 switch. The fast path — when the free list has blocks available — never touches CR3 at all. CR3 switching only happens on the slow path when a new physical page needs to be mapped.
+Each domain's physical frames are mapped into both the domain's own page directory and the kernel's page directory at the same time. This means returned pointers stay valid in kernel space without needing a CR3 switch. The fast path — when the free list has blocks available — never touches CR3 at all. Ín the new design it was found that cr3 switching is not necissary at all, now the page maping, freeing and allocation all happens in one cr3 but they are still seperated by cr3 dirs.
 
 kfree derives the correct domain purely from the pointer address. No size argument is needed. No header is read.
 Free List.
@@ -31,6 +31,8 @@ Free List.
 Free blocks store a pointer to the next free block in their own first 4 bytes. When a block is handed to the caller, those bytes become user data. When freed, they become list linkage again. There is no separate bookkeeping structure — freed memory is the bookkeeping.
 
 This is a LIFO free list. The most recently freed block is the next to be allocated.
+
+Each domain occupies a 256MB virtual region, sufficient for millions of small block allocations before virtual exhaustion.
 
 Performance
 
@@ -69,8 +71,6 @@ Kernel stack lives at 0xC0000000+, heap domains at 0x10000000–0x80000000. Stac
 
 Per-process isolation follows the same pattern. Each process receives the same virtual layout backed by different physical frames. Processes cannot access each other's memory by page table construction.
 Large Allocations
-
-Allocations above 4096 bytes are handled by a separate large domain at 0x80000000. Pages are mapped on demand — there is no pre-committed ceiling. A 4-byte page count header is stored inline, which is the one known metadata overhead in the current prototype.
 
 Large allocation cost is approximately 7470 cycles per page, dominated by page table mapping overhead.
 Limitations
