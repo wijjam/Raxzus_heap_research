@@ -78,7 +78,7 @@ What's Next
 
 The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to attempt to reduce worst-case internal fragmentation below 25%.
 
-Below here are the test run images of the heap with <4KB blocks.
+Below here are the test run images of the heap with 1024 domain blocks.
 
 <img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/fd801e31-e528-4624-9b3c-af2e26691518" />
 
