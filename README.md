@@ -72,29 +72,35 @@ Kernel stack lives at 0xC0000000+, heap domains at 0x10000000–0x80000000. Stac
 Per-process isolation follows the same pattern. Each process receives the same virtual layout backed by different physical frames. Processes cannot access each other's memory by page table construction.
 Large Allocations
 
-Large allocation cost is approximately 7470 cycles per page, dominated by page table mapping overhead.
+Large allocation cost is approximately 738 cycles per page, dominated by page table mapping overhead.
 Limitations
 
     Large allocations carry a 4-byte inline header
     Physical frames are not returned to the PMM on large free (prototype limitation)
-    Without PCID, CR3 switching cost dominates the cycle count
+    //Without PCID, CR3 switching cost dominates the cycle count (fixed in latest)
     No multicore support yet — planned for the 64-bit port
 
 What's Next
 
-The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to reduce worst-case internal fragmentation below 25%.
+The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to atempt to reduce worst-case internal fragmentation below 25%.
 
 Below here are the test run images of the heap with <4KB blocks.
 
-<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/ae9112e6-717e-490c-9bd9-a8413093b70a" />
+<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/fd801e31-e528-4624-9b3c-af2e26691518" />
+
 
 We see here the same data as written in the top section. With the avg cycles for malloc and free being 26 cycles.
 
-<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/f3f48c76-9496-4053-b57a-e6941bf60182" />
+<img width="1210" height="907" alt="image" src="https://github.com/user-attachments/assets/d5f66bcf-82b8-4318-913a-745e3fd62218" />
 
 As we can see the avg and stddev stay consistant through runs.
 
-<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/5b360769-39d6-4677-a967-01148ea4ee5b" />
+Below are the >4KB allocation tests:
+
+<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/cfc0d29c-dfd3-4d3b-ac98-bedc703669c2" />
+<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/9e5e69e3-d254-44e2-81ac-10b9019237d2" />
+<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/85299970-f563-4b48-8afe-373c9e7ee7c7" />
+
 
 
 
