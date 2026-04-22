@@ -45,8 +45,8 @@ void init_heap_domain(heap_domain_t* domain, uint32_t block_size, uint32_t virt_
     }
     kprintf("[HEAP_DBG] page directory zeroed\n");
 
-    // 3. Copy kernel mappings (entries 768-1023) so CR3 switches don't lose
-    //    access to kernel code/data/stack.
+    // 3. Copy kernel mappings (entries 768-1023) into domain page directory
+    //    so domain isolation is correct even though CR3 never switches.
     extern uint32_t _kernel_page_dir[];
     uint32_t* kernel_dir = (uint32_t*)_kernel_page_dir;
     for (int i = 768; i < 1024; i++) {
@@ -115,7 +115,6 @@ void* heap_domain_alloc(heap_domain_t* domain) {
         uint32_t phys = get_next_free_process_frame();
         if (phys == 0) {
             kprintf_red("[HEAP] FATAL: PMM out of frames during alloc\n");
-            //asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
             return NULL;
         }
 
