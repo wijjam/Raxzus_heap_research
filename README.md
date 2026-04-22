@@ -94,6 +94,7 @@ We see here the same data as written in the top section. With the avg cycles for
 
 As we can see the avg and stddev stay consistant through runs.
 
-<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/04857a9c-601c-4024-b664-4c06937ca197" />
+<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/5b360769-39d6-4677-a967-01148ea4ee5b" />
+
 
 
