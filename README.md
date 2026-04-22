@@ -6,6 +6,8 @@ Author: William B.
 Date: April 2026
 Status: Prototype — 32-bit, single core
 
+[![DOI](https://zenodo.org/badge/1215019950.svg)](https://doi.org/10.5281/zenodo.19697609)
+
 Raxzus Flow — A Novel MMU-Backed Domain Allocation Method
 
 Raxzus Flow is the name of the allocation method. This document describes its first implementation in RaxzusOS, a custom x86 32-bit kernel.
