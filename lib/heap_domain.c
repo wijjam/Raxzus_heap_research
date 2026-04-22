@@ -109,14 +109,6 @@ void* heap_domain_alloc(heap_domain_t* domain) {
     }
 
 
-
-    // Convert the domain's virtual page directory pointer to its physical address.
-    // CR3 must always hold a physical address — the CPU uses it before virtual
-    // translation is possible.
-    uint32_t phys_cr3 = (uint32_t)domain->page_directory - 0xC0000000;
-
-
-
     // If the free list is empty we need to back this domain with a new physical page.
     if (domain->next_free_block == NULL) {
 
@@ -140,8 +132,7 @@ void* heap_domain_alloc(heap_domain_t* domain) {
         invlpg(virt);
 
         // Also map the same physical frame into the kernel's page directory so
-        // the returned pointer remains valid after we switch CR3 back.  Without
-        // this the caller would page-fault on the very first dereference.
+        // the returned pointer remains valid.
         extern uint32_t _kernel_page_dir[];
         map_page((uint32_t*)_kernel_page_dir, virt, phys, PAGE_KERNEL);
         invlpg(virt);
@@ -241,8 +232,6 @@ void* kmalloc_large(uint32_t size) {
     uint32_t pages = (size + 4 + 4095) / 4096;
 
 
-    uint32_t phys_cr3 = (uint32_t)large_domain.page_directory - 0xC0000000;
-
 
     uint32_t virt_start;
 
@@ -273,7 +262,6 @@ void* kmalloc_large(uint32_t size) {
         uint32_t phys = get_next_free_process_frame();
         if (phys == 0) {
             kprintf_red("[HEAP] FATAL: PMM out of frames in kmalloc_large\n");
-            //asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
             return NULL;
         }
         uint32_t virt = virt_start + (i * 4096);
