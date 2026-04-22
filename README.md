@@ -1,4 +1,7 @@
-Copyright (c) 2026 William B.
+     Copyright (c) 2026 William Berglind
+     Raxzus Flow — MMU-backed domain heap allocator
+     Licensed under the Apache License 2.0
+     
 Author: William B.
 Date: April 2026
 Status: Prototype — 32-bit, single core
