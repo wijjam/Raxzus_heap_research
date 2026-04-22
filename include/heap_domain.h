@@ -4,6 +4,10 @@
 
 #include <stdint.h>
 
+
+#define NULL (void*)0
+#define kfree(ptr) do { kfree_heap(ptr); (ptr) = NULL; } while(0) // This is our reason why multiple free of the same pointer can't happen.
+
 typedef struct {
     uint32_t* page_directory;    // CR3 for this size class (VIRTUAL address!)
     uint32_t block_size;         // 64, 128, 256, 512, 1K, 2K, 4K
@@ -20,7 +24,7 @@ void heap_domain_free(heap_domain_t* domain, void* ptr);
 
 void init_all_heaps(void);
 void* kmalloc(uint32_t size);
-void  kfree(void* ptr);
+void  kfree_heap(void* ptr);
 void* kmalloc_large(uint32_t size);
 void  kfree_large(void* ptr);
 

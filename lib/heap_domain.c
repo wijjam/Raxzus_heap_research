@@ -58,6 +58,16 @@ void init_heap_domain(heap_domain_t* domain, uint32_t block_size, uint32_t virt_
 
 void* heap_domain_alloc(heap_domain_t* domain) {
 
+
+
+    if (domain->next_free_block != NULL) {
+        // Fast path — no CR3 switch needed
+        void* ptr = domain->next_free_block;
+        domain->next_free_block = (void*)(*(uint32_t*)ptr);
+        return ptr;
+    }
+
+
     // Save the current CR3 (kernel page directory) so we can restore it after.
     uint32_t old_cr3;
     asm volatile("mov %%cr3, %0" : "=r"(old_cr3));
@@ -320,7 +330,7 @@ void* kmalloc(uint32_t size) {
     return kmalloc_large(size);
 }
 
-void kfree(void* ptr) {
+void kfree_heap(void* ptr) {
     uint32_t addr = (uint32_t)ptr;
     if      (addr >= 0x10000000 && addr < 0x20000000) heap_domain_free(&heap_64,  ptr);
     else if (addr >= 0x20000000 && addr < 0x30000000) heap_domain_free(&heap_128, ptr);

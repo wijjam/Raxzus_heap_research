@@ -2,11 +2,178 @@
 #include "../include/heap_domain.h"
 #include "../include/vga.h"
 
+// Used as the timer
 static inline uint32_t rdtsc(void) {
     uint32_t lo;
     asm volatile ("rdtsc" : "=a"(lo) : : "edx");
     return lo;
 }
+
+#define FRAG_N   40000
+#define DIRTY_N  48000
+
+void cmd_memtest_v1(void) {
+
+
+
+    void** s64  = kmalloc(FRAG_N * sizeof(void*));
+    void** s128 = kmalloc(FRAG_N * sizeof(void*));
+    void** s256 = kmalloc(FRAG_N * sizeof(void*));
+    void** s512 = kmalloc(FRAG_N * sizeof(void*));
+    void** s1024 = kmalloc(FRAG_N * sizeof(void*));
+
+    kprintf_yellow("\nNow allocating %d different types of blocks\n", FRAG_N);
+
+
+    // We use prime numbers for each to get a unique id for each block when checking.
+    for (int i = 0; i<FRAG_N; i++) {
+        s64[i] = kmalloc(50);
+        *(uint32_t*)s64[i] = (i+1)*3;
+        s128[i] = kmalloc(100);
+        *(uint32_t*)s128[i] = (i+1)*7;
+        s256[i] = kmalloc(200);
+        *(uint32_t*)s256[i] = (i+1)*11;
+        s512[i] = kmalloc(500);
+        *(uint32_t*)s512[i] = (i+1)*13;
+        s1024[i] = kmalloc(1000);
+        *(uint32_t*)s1024[i] = (i+1)*17;
+    }
+
+    kprintf_yellow("Testing if the newly allocated blocks keep the correct values or if they are corrupted\n");
+    for (int ii = 0; ii<FRAG_N; ii++) {
+
+        if (*(uint32_t*)s64[ii] != (ii+1)*3) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s128[ii] != (ii+1)*7) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s256[ii] != (ii+1)*11) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s512[ii] != (ii+1)*13) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s1024[ii] != (ii+1)*17) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+    }
+
+    kprintf_green("Allocation of all blocks finished successfully with no corruption, now comensing swish cheese\n");
+
+    kprintf_yellow("Freeing every other 64 block:\n");
+
+    for (int k = 0; k < FRAG_N; k++) {
+
+        if (k % 2 == 0) {
+            kfree(s64[k]);
+        }
+    }
+
+    for (int j = 0; j < FRAG_N; j++) {
+
+        if (j % 2 == 0) {
+            kfree(s256[j]);
+        }
+    }
+
+    kprintf_green("The swiss cheese has been done successfully, Now checking heap data corruption\n");
+
+
+    for (int i = 0; i < FRAG_N; i++) {
+        if (i % 2 != 0) { // odd — not freed
+            if (*(uint32_t*)s64[i] != (uint32_t)(i+1)*3) {
+              kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+            }
+            if (*(uint32_t*)s256[i] != (uint32_t)(i+1)*11) {
+                kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+
+            }
+        }
+        if (*(uint32_t*)s128[i]  != (uint32_t)(i+1)*7)  {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s512[i]  != (uint32_t)(i+1)*13) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+        if (*(uint32_t*)s1024[i] != (uint32_t)(i+1)*17) {
+            kprintf_red("One of the blocks has been corrupted, PANIC!!");
+            return;
+        }
+    }
+
+    // 32 sample timing under fragmentation
+    uint32_t frag_min = 0xFFFFFFFF, frag_max = 0, frag_sum = 0;
+    for (int s = 0; s < 32; s++) {
+        uint32_t t1 = rdtsc();
+        uint32_t* p = kmalloc(1024);
+        *(volatile uint32_t*)p = 42;
+        kfree(p);
+        uint32_t t2 = rdtsc();
+        uint32_t d = t2 - t1;
+        if (d < frag_min) { frag_min = d; }
+        if (d > frag_max) { frag_max = d; }
+        frag_sum += d;
+    }
+
+
+    kprintf("FRAGMENTED  min=%d max=%d avg=%d cycles\n", frag_min, frag_max, frag_sum/32);
+
+
+    for (int i = 0; i < FRAG_N; i++) {
+        kfree(s64[i]);
+        kfree(s128[i]);
+        kfree(s256[i]);
+        kfree(s512[i]);
+        kfree(s1024[i]);
+    }
+    kfree(s64);
+    kfree(s256);
+    kfree(s512);
+    kfree(s128);
+    kfree(s1024);
+
+
+    
+    // 32 sample timing after cleanup
+    uint32_t clean_min = 0xFFFFFFFF, clean_max = 0, clean_sum = 0;
+    for (int s = 0; s < 32; s++) {
+        uint32_t t1 = rdtsc();
+        uint32_t* p = kmalloc(1024);
+        *(volatile uint32_t*)p = 42;
+        kfree(p);
+        uint32_t t2 = rdtsc();
+        uint32_t d = t2 - t1;
+        if (d < clean_min) { clean_min = d; }
+        if (d > clean_max) { clean_max = d; }
+        clean_sum += d;
+    }
+    kprintf("CLEAN       min=%d max=%d avg=%d cycles\n", clean_min, clean_max, clean_sum/32);
+    kprintf("O(1) delta (avg): %d cycles\n", (int32_t)(frag_sum/32) - (int32_t)(clean_sum/32));
+
+
+}
+
+
+void cmd_memtest_v2(void) {
+
+}
+
+
+
+
+/*
+
+Karantän
 
 #define SAMPLES 32
 
@@ -295,3 +462,4 @@ void cmd_memtest_v2(void) {
     kprintf_white("   MEMTEST 2 COMPLETE\n");
     kprintf_white("========================================\n\n");
 }
+*/
