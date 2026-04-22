@@ -1,3 +1,7 @@
+// Copyright (c) 2026 William Berglind
+// Raxzus Flow — MMU-backed domain heap allocator
+// Licensed under the Apache License 2.0
+
 // heap_domain.c
 #include "heap_domain.h"
 #include "../include/pmm.h"
@@ -5,6 +9,7 @@
 #include "../include/vga.h"
 
 #define NULL (void*)0
+#define PREMAP_PAGES 256 // To map 1MB of pages on each domain at start and when a process is made
 
 // Global heap domains
 heap_domain_t heap_64;
@@ -19,6 +24,8 @@ heap_domain_t heap_4k;
 static inline void invlpg(uint32_t virt) {
     asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
 }
+
+// This function initializes the different size classes and pre-maps 1MB of virtual pages.
 
 void init_heap_domain(heap_domain_t* domain, uint32_t block_size, uint32_t virt_base) {
     kprintf("[HEAP_DBG] init_heap_domain: block_size=%d virt_base=0x%x\n", block_size, virt_base);
@@ -54,8 +61,42 @@ void init_heap_domain(heap_domain_t* domain, uint32_t block_size, uint32_t virt_
     domain->next_free_block = NULL;
 
     kprintf("[HEAP_DBG] init_heap_domain done\n");
+
+    extern uint32_t _kernel_page_dir[];
+
+    for (uint32_t p = 0; p < PREMAP_PAGES; p++) {
+        uint32_t phys = get_next_free_process_frame();
+        if (phys == 0) {
+            kprintf_red("[HEAP] FATAL: PMM out of frames durring pre-map");
+            while(1);
+        }
+
+        // double map domain CR3 and kernel CR3
+        uint32_t virt = domain->next_virt_addr;
+        map_page(domain->page_directory, virt, phys, PAGE_KERNEL);
+        map_page((uint32_t*)_kernel_page_dir, virt, phys, PAGE_KERNEL);
+        invlpg(virt); // we do the flush
+
+            // Build free list inside this page
+        for (uint32_t i = 0; i < domain->blocks_per_page - 1; i++) {
+            uint32_t block_addr = virt + (i * domain->block_size);
+            uint32_t next_block = virt + ((i + 1) * domain->block_size);
+            *(uint32_t*)block_addr = next_block;
+        }
+
+            // Last block points to current free list head (chains pages together)
+        uint32_t last_block = virt + ((domain->blocks_per_page - 1) * domain->block_size);
+        *(uint32_t*)last_block = (uint32_t)domain->next_free_block;
+
+        domain->next_free_block = (void*)virt;
+        
+        domain->next_virt_addr += 4096;
+    }
+
 }
 
+// Function takes care of the heap allocations that are equal to or less than 4KB
+// Fast path pop next_free_block from LIFO
 void* heap_domain_alloc(heap_domain_t* domain) {
 
 
@@ -68,21 +109,13 @@ void* heap_domain_alloc(heap_domain_t* domain) {
     }
 
 
-    // Save the current CR3 (kernel page directory) so we can restore it after.
-    uint32_t old_cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(old_cr3));
 
     // Convert the domain's virtual page directory pointer to its physical address.
     // CR3 must always hold a physical address — the CPU uses it before virtual
     // translation is possible.
     uint32_t phys_cr3 = (uint32_t)domain->page_directory - 0xC0000000;
 
-    // Switch to this domain's page directory.  From this point the CPU sees
-    // the domain's virtual address space.  Kernel mappings (0xC0000000+) are
-    // still accessible because we copied them into every domain at init time.
-    // PGE means kernel TLB entries survive this switch — only domain-specific
-    // entries (0x10000000-0x70000000) are flushed.
-    asm volatile("mov %0, %%cr3" : : "r"(phys_cr3) : "memory");
+
 
     // If the free list is empty we need to back this domain with a new physical page.
     if (domain->next_free_block == NULL) {
@@ -91,7 +124,7 @@ void* heap_domain_alloc(heap_domain_t* domain) {
         uint32_t phys = get_next_free_process_frame();
         if (phys == 0) {
             kprintf_red("[HEAP] FATAL: PMM out of frames during alloc\n");
-            asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
+            //asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
             return NULL;
         }
 
@@ -144,12 +177,10 @@ void* heap_domain_alloc(heap_domain_t* domain) {
     // Advance the head — this is the entire allocation algorithm.
     domain->next_free_block = (void*)(*(uint32_t*)ptr);
 
-    // Restore the kernel CR3.  The returned pointer (ptr) is valid here because
-    // we mapped the same physical frame into the kernel page directory above.
-    asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
-
     return ptr;
 }
+
+
 
 void heap_domain_free(heap_domain_t* domain, void* ptr) {
 
@@ -209,10 +240,9 @@ void* kmalloc_large(uint32_t size) {
     // How many 4 KB pages do we need for the user data plus the 4-byte header?
     uint32_t pages = (size + 4 + 4095) / 4096;
 
-    uint32_t old_cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(old_cr3));
+
     uint32_t phys_cr3 = (uint32_t)large_domain.page_directory - 0xC0000000;
-    asm volatile("mov %0, %%cr3" : : "r"(phys_cr3) : "memory");
+
 
     uint32_t virt_start;
 
@@ -243,7 +273,7 @@ void* kmalloc_large(uint32_t size) {
         uint32_t phys = get_next_free_process_frame();
         if (phys == 0) {
             kprintf_red("[HEAP] FATAL: PMM out of frames in kmalloc_large\n");
-            asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
+            //asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
             return NULL;
         }
         uint32_t virt = virt_start + (i * 4096);
@@ -255,9 +285,6 @@ void* kmalloc_large(uint32_t size) {
     // Write the page count into the hidden 4-byte header at the very start.
     *(uint32_t*)virt_start = pages;
 
-    // Advance the virtual cursor so the next large alloc is contiguous but separate.
-
-    asm volatile("mov %0, %%cr3" : : "r"(old_cr3) : "memory");
 
     // Return pointer past the header — this is what the caller sees.
     return (void*)(virt_start + sizeof(uint32_t));
@@ -339,5 +366,5 @@ void kfree_heap(void* ptr) {
     else if (addr >= 0x50000000 && addr < 0x60000000) heap_domain_free(&heap_1k,  ptr);
     else if (addr >= 0x60000000 && addr < 0x70000000) heap_domain_free(&heap_2k,  ptr);
     else if (addr >= 0x70000000 && addr < 0x80000000) heap_domain_free(&heap_4k,  ptr);
-    else if (addr >= 0x80000000)                       kfree_large(ptr);
+    else if (addr >= 0x80000000 && addr)                       kfree_large(ptr);
 }

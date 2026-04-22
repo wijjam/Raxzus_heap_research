@@ -12,9 +12,14 @@ static inline uint32_t rdtsc(void) {
 #define FRAG_N   40000
 #define DIRTY_N  48000
 
+static uint32_t isqrt(uint32_t n) {
+    if (n == 0) return 0;
+    uint32_t x = n, y = (n / 2) + 1;
+    while (y < x) { x = y; y = (x + n / x) / 2; }
+    return x;
+}
+
 void cmd_memtest_v1(void) {
-
-
 
     void** s64  = kmalloc(FRAG_N * sizeof(void*));
     void** s128 = kmalloc(FRAG_N * sizeof(void*));
@@ -24,8 +29,6 @@ void cmd_memtest_v1(void) {
 
     kprintf_yellow("\nNow allocating %d different types of blocks\n", FRAG_N);
 
-
-    // We use prime numbers for each to get a unique id for each block when checking.
     for (int i = 0; i<FRAG_N; i++) {
         s64[i] = kmalloc(50);
         *(uint32_t*)s64[i] = (i+1)*3;
@@ -41,77 +44,33 @@ void cmd_memtest_v1(void) {
 
     kprintf_yellow("Testing if the newly allocated blocks keep the correct values or if they are corrupted\n");
     for (int ii = 0; ii<FRAG_N; ii++) {
-
-        if (*(uint32_t*)s64[ii] != (ii+1)*3) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s128[ii] != (ii+1)*7) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s256[ii] != (ii+1)*11) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s512[ii] != (ii+1)*13) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s1024[ii] != (ii+1)*17) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
+        if (*(uint32_t*)s64[ii] != (ii+1)*3) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s128[ii] != (ii+1)*7) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s256[ii] != (ii+1)*11) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s512[ii] != (ii+1)*13) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s1024[ii] != (ii+1)*17) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
     }
 
     kprintf_green("Allocation of all blocks finished successfully with no corruption, now comensing swish cheese\n");
-
     kprintf_yellow("Freeing every other 64 block:\n");
 
-    for (int k = 0; k < FRAG_N; k++) {
-
-        if (k % 2 == 0) {
-            kfree(s64[k]);
-        }
-    }
-
-    for (int j = 0; j < FRAG_N; j++) {
-
-        if (j % 2 == 0) {
-            kfree(s256[j]);
-        }
-    }
+    for (int k = 0; k < FRAG_N; k++) { if (k % 2 == 0) kfree(s64[k]); }
+    for (int j = 0; j < FRAG_N; j++) { if (j % 2 == 0) kfree(s256[j]); }
 
     kprintf_green("The swiss cheese has been done successfully, Now checking heap data corruption\n");
 
-
     for (int i = 0; i < FRAG_N; i++) {
-        if (i % 2 != 0) { // odd — not freed
-            if (*(uint32_t*)s64[i] != (uint32_t)(i+1)*3) {
-              kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-            }
-            if (*(uint32_t*)s256[i] != (uint32_t)(i+1)*11) {
-                kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-
-            }
+        if (i % 2 != 0) {
+            if (*(uint32_t*)s64[i] != (uint32_t)(i+1)*3) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+            if (*(uint32_t*)s256[i] != (uint32_t)(i+1)*11) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
         }
-        if (*(uint32_t*)s128[i]  != (uint32_t)(i+1)*7)  {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s512[i]  != (uint32_t)(i+1)*13) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
-        if (*(uint32_t*)s1024[i] != (uint32_t)(i+1)*17) {
-            kprintf_red("One of the blocks has been corrupted, PANIC!!");
-            return;
-        }
+        if (*(uint32_t*)s128[i]  != (uint32_t)(i+1)*7)  { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s512[i]  != (uint32_t)(i+1)*13) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
+        if (*(uint32_t*)s1024[i] != (uint32_t)(i+1)*17) { kprintf_red("One of the blocks has been corrupted, PANIC!!"); return; }
     }
 
     // 32 sample timing under fragmentation
+    uint32_t frag_samples[32];
     uint32_t frag_min = 0xFFFFFFFF, frag_max = 0, frag_sum = 0;
     for (int s = 0; s < 32; s++) {
         uint32_t t1 = rdtsc();
@@ -120,14 +79,19 @@ void cmd_memtest_v1(void) {
         kfree(p);
         uint32_t t2 = rdtsc();
         uint32_t d = t2 - t1;
-        if (d < frag_min) { frag_min = d; }
-        if (d > frag_max) { frag_max = d; }
+        frag_samples[s] = d;
+        if (d < frag_min) frag_min = d;
+        if (d > frag_max) frag_max = d;
         frag_sum += d;
     }
-
-
-    kprintf("FRAGMENTED  min=%d max=%d avg=%d cycles\n", frag_min, frag_max, frag_sum/32);
-
+    uint32_t frag_avg = frag_sum / 32;
+    uint32_t frag_var = 0;
+    for (int s = 0; s < 32; s++) {
+        int32_t diff = (int32_t)frag_samples[s] - (int32_t)frag_avg;
+        frag_var += diff * diff;
+    }
+    frag_var /= 31;
+    kprintf("FRAGMENTED  min=%d max=%d avg=%d stddev=%d cycles\n", frag_min, frag_max, frag_avg, isqrt(frag_var));
 
     for (int i = 0; i < FRAG_N; i++) {
         kfree(s64[i]);
@@ -142,9 +106,8 @@ void cmd_memtest_v1(void) {
     kfree(s128);
     kfree(s1024);
 
-
-    
     // 32 sample timing after cleanup
+    uint32_t clean_samples[32];
     uint32_t clean_min = 0xFFFFFFFF, clean_max = 0, clean_sum = 0;
     for (int s = 0; s < 32; s++) {
         uint32_t t1 = rdtsc();
@@ -153,19 +116,110 @@ void cmd_memtest_v1(void) {
         kfree(p);
         uint32_t t2 = rdtsc();
         uint32_t d = t2 - t1;
-        if (d < clean_min) { clean_min = d; }
-        if (d > clean_max) { clean_max = d; }
+        clean_samples[s] = d;
+        if (d < clean_min) clean_min = d;
+        if (d > clean_max) clean_max = d;
         clean_sum += d;
     }
-    kprintf("CLEAN       min=%d max=%d avg=%d cycles\n", clean_min, clean_max, clean_sum/32);
-    kprintf("O(1) delta (avg): %d cycles\n", (int32_t)(frag_sum/32) - (int32_t)(clean_sum/32));
-
-
+    uint32_t clean_avg = clean_sum / 32;
+    uint32_t clean_var = 0;
+    for (int s = 0; s < 32; s++) {
+        int32_t diff = (int32_t)clean_samples[s] - (int32_t)clean_avg;
+        clean_var += diff * diff;
+    }
+    clean_var /= 31;
+    kprintf("CLEAN       min=%d max=%d avg=%d stddev=%d cycles\n", clean_min, clean_max, clean_avg, isqrt(clean_var));
+    kprintf("O(1) delta (avg): %d cycles\n", (int32_t)frag_avg - (int32_t)clean_avg);
 }
 
 
 void cmd_memtest_v2(void) {
+    kprintf_white("\n========================================\n");
+    kprintf_white("   RAXZUS HEAP - MEMTEST 2 (LARGE ALLOC)\n");
+    kprintf_white("========================================\n\n");
 
+    kprintf_yellow("[PHASE 3] Large Allocation Test (kmalloc)\n");
+    kprintf("  Allocates N contiguous 4KB pages as a single region.\n");
+    kprintf("  Verifies virtual contiguity and write/read correctness.\n\n");
+
+    // --- 64 KB allocation (16 pages) ---
+    kprintf("  Allocating 64 KB (16 pages)...\n");
+    uint8_t* buf64k = (uint8_t*)kmalloc(64 * 1024);
+    if (!buf64k) {
+        kprintf_red("  FAIL: kmalloc(64K) returned NULL\n");
+    } else {
+        kprintf("  Got pointer: 0x%x\n", (uint32_t)buf64k);
+        for (uint32_t i = 0; i < 64 * 1024; i++)
+            buf64k[i] = (uint8_t)(i & 0xFF);
+        int bad = 0;
+        for (uint32_t i = 0; i < 64 * 1024; i++)
+            if (buf64k[i] != (uint8_t)(i & 0xFF)) bad++;
+        if (bad == 0)
+            kprintf_green("  PASS: 64 KB written and verified (65536 bytes, zero errors)\n");
+        else
+            kprintf_red("  FAIL: %d bytes corrupted in 64 KB region\n", bad);
+    }
+
+    // --- 1 MB allocation (256 pages) ---
+    kprintf("\n  Allocating 1 MB (256 pages)...\n");
+    uint8_t* buf1m = (uint8_t*)kmalloc(1024 * 1024);
+    if (!buf1m) {
+        kprintf_red("  FAIL: kmalloc(1MB) returned NULL\n");
+    } else {
+        kprintf("  Got pointer: 0x%x\n", (uint32_t)buf1m);
+        for (uint32_t i = 0; i < 1024 * 1024; i++)
+            buf1m[i] = (uint8_t)((i ^ (i >> 8)) & 0xFF);
+        int bad = 0;
+        for (uint32_t i = 0; i < 1024 * 1024; i++)
+            if (buf1m[i] != (uint8_t)((i ^ (i >> 8)) & 0xFF)) bad++;
+        if (bad == 0)
+            kprintf_green("  PASS: 1 MB written and verified (1048576 bytes, zero errors)\n");
+        else
+            kprintf_red("  FAIL: %d bytes corrupted in 1 MB region\n", bad);
+    }
+
+    if (buf64k && buf1m) {
+        uint32_t gap = (uint32_t)buf1m - (uint32_t)buf64k;
+        kprintf("\n  Address gap between 64K and 1MB regions: %d bytes\n", gap);
+        if ((uint32_t)buf1m > (uint32_t)buf64k)
+            kprintf_green("  PASS: Regions are non-overlapping and virtually contiguous\n");
+        else
+            kprintf_red("  FAIL: Region addresses overlap!\n");
+    }
+
+    kprintf_yellow("\n  Timing: kmalloc cost per page\n");
+    asm volatile("cli");
+    uint32_t t0 = rdtsc();
+    void* tbuf = kmalloc(4096);
+    uint32_t t1 = rdtsc();
+    asm volatile("sti");
+    kprintf("    1 page  (4 KB) : %d cycles\n", t1 - t0);
+
+    asm volatile("cli");
+    t0 = rdtsc();
+    void* tbuf8 = kmalloc(8 * 4096);
+    t1 = rdtsc();
+    asm volatile("sti");
+    kprintf("    8 pages (32 KB): %d cycles  (per-page: %d)\n",
+            t1 - t0, (t1 - t0) / 8);
+
+    asm volatile("cli");
+    t0 = rdtsc();
+    void* tbig = kmalloc(1024 * 1024);
+    t1 = rdtsc();
+    asm volatile("sti");
+    kprintf("    256 pages (1MB): %d cycles  (per-page: %d)\n",
+            t1 - t0, (t1 - t0) / 256);
+    kfree(tbig);
+
+    kfree(tbuf);
+    kfree(tbuf8);
+    if (buf64k) kfree(buf64k);
+    if (buf1m)  kfree(buf1m);
+
+    kprintf_white("\n========================================\n");
+    kprintf_white("   MEMTEST 2 COMPLETE\n");
+    kprintf_white("========================================\n\n");
 }
 
 
@@ -381,22 +435,22 @@ void cmd_memtest_v1(void) {
 }
 
 // -----------------------------------------------------------------------
-// memtest 2 - Large allocation test (kmalloc_large)
+// memtest 2 - Large allocation test (kmalloc)
 // -----------------------------------------------------------------------
 void cmd_memtest_v2(void) {
     kprintf_white("\n========================================\n");
     kprintf_white("   RAXZUS HEAP - MEMTEST 2 (LARGE ALLOC)\n");
     kprintf_white("========================================\n\n");
 
-    kprintf_yellow("[PHASE 3] Large Allocation Test (kmalloc_large)\n");
+    kprintf_yellow("[PHASE 3] Large Allocation Test (kmalloc)\n");
     kprintf("  Allocates N contiguous 4KB pages as a single region.\n");
     kprintf("  Verifies virtual contiguity and write/read correctness.\n\n");
 
     // --- 64 KB allocation (16 pages) ---
     kprintf("  Allocating 64 KB (16 pages)...\n");
-    uint8_t* buf64k = (uint8_t*)kmalloc_large(64 * 1024);
+    uint8_t* buf64k = (uint8_t*)kmalloc(64 * 1024);
     if (!buf64k) {
-        kprintf_red("  FAIL: kmalloc_large(64K) returned NULL\n");
+        kprintf_red("  FAIL: kmalloc(64K) returned NULL\n");
     } else {
         kprintf("  Got pointer: 0x%x\n", (uint32_t)buf64k);
         for (uint32_t i = 0; i < 64 * 1024; i++)
@@ -412,9 +466,9 @@ void cmd_memtest_v2(void) {
 
     // --- 1 MB allocation (256 pages) ---
     kprintf("\n  Allocating 1 MB (256 pages)...\n");
-    uint8_t* buf1m = (uint8_t*)kmalloc_large(1024 * 1024);
+    uint8_t* buf1m = (uint8_t*)kmalloc(1024 * 1024);
     if (!buf1m) {
-        kprintf_red("  FAIL: kmalloc_large(1MB) returned NULL\n");
+        kprintf_red("  FAIL: kmalloc(1MB) returned NULL\n");
     } else {
         kprintf("  Got pointer: 0x%x\n", (uint32_t)buf1m);
         for (uint32_t i = 0; i < 1024 * 1024; i++)
@@ -437,26 +491,26 @@ void cmd_memtest_v2(void) {
             kprintf_red("  FAIL: Region addresses overlap!\n");
     }
 
-    kprintf_yellow("\n  Timing: kmalloc_large cost per page\n");
+    kprintf_yellow("\n  Timing: kmalloc cost per page\n");
     asm volatile("cli");
     uint32_t t0 = rdtsc();
-    void* tbuf = kmalloc_large(4096);
+    void* tbuf = kmalloc(4096);
     uint32_t t1 = rdtsc();
     asm volatile("sti");
     kprintf("    1 page  (4 KB) : %d cycles\n", t1 - t0);
 
     asm volatile("cli");
     t0 = rdtsc();
-    void* tbuf8 = kmalloc_large(8 * 4096);
+    void* tbuf8 = kmalloc(8 * 4096);
     t1 = rdtsc();
     asm volatile("sti");
     kprintf("    8 pages (32 KB): %d cycles  (per-page: %d)\n",
             t1 - t0, (t1 - t0) / 8);
 
-    kfree_large(tbuf);
-    kfree_large(tbuf8);
-    if (buf64k) kfree_large(buf64k);
-    if (buf1m)  kfree_large(buf1m);
+    kfree(tbuf);
+    kfree(tbuf8);
+    if (buf64k) kfree(buf64k);
+    if (buf1m)  kfree(buf1m);
 
     kprintf_white("\n========================================\n");
     kprintf_white("   MEMTEST 2 COMPLETE\n");
