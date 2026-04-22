@@ -21,37 +21,39 @@ heap_1k	1024 bytes	0x50000000
 heap_2k	2048 bytes	0x60000000
 heap_4k	4096 bytes	0x70000000
 
-Each domain has its own page directory. When an allocation is requested, the allocator switches CR3 to the appropriate domain, pops the free list head, and restores the kernel CR3. The entire operation is O(1) by construction — there is no searching, no coalescing, no walking of any structure.
+Each domain has its own page directory. When an allocation is requested, the allocator uses our multi mapped functionality and, pops the free list head and returns. The entire operation is O(1) by construction — there is no searching, no coalescing, no walking of any structure.
+
+Each domain's physical frames are mapped into both the domain's own page directory and the kernel's page directory at the same time. This means returned pointers stay valid in kernel space without needing a CR3 switch. The fast path — when the free list has blocks available — never touches CR3 at all. CR3 switching only happens on the slow path when a new physical page needs to be mapped.
 
 kfree derives the correct domain purely from the pointer address. No size argument is needed. No header is read.
-Free List
+Free List.
 
 Free blocks store a pointer to the next free block in their own first 4 bytes. When a block is handed to the caller, those bytes become user data. When freed, they become list linkage again. There is no separate bookkeeping structure — freed memory is the bookkeeping.
 
 This is a LIFO free list. The most recently freed block is the next to be allocated.
+
 Performance
 
 Tests were run on a 32-bit x86 system without PCID support.
 
 Steady state (free list warm, 32 samples):
 
-    kmalloc(64) + kfree: 636 cycles, jitter 8 cycles
-    kmalloc(256) + kfree: 638 cycles, jitter 14 cycles
-    kmalloc(1024) + kfree: 640 cycles, jitter 40 cycles
+    FRAGMENTED kmalloc(1024) + kfree: min=26 max=28 avg=26 stddev=0 cycles 
+    CLEAN      kmalloc(1024) + kfree: min=24 max=36 avg=26 stddev=2 cycles
+    O(1) delta (avg): 0 cycles
+Images of this and more tests can be seen at the bottom of the README.
 
-Under heap pressure (24,000 live allocs, 24,000 freed holes):
+Round trip cost (kmalloc + kfree combined) is 26 +- 2 cycles on 32-bit x86 without PCID.
 
-    Cost delta vs steady state: 2 cycles
-    O(1) confirmed — heap state has zero effect on allocation cost
+Fast path on 64-bit with PCID: expected sub-20 cycles since CR3 switch cost disappears.
 
-Round trip cost (kmalloc + kfree combined) is 636 ± 40 cycles on 32-bit x86 without PCID. Per operation this is approximately 300 ± 20 cycles.
+Slow path on 64-bit with PCID: significantly cheaper since TLB flush on page mapping is eliminated.
 
-The majority of this cost is TLB flush overhead from CR3 switching, not allocator logic. The actual allocation and free operations are 2-3 instructions each.
+When the free list is exhausted, a new physical page is mapped on demand. This slow path costs approximately 5000-6500 cycles and is amortized over N allocations where N = 4096 / block_size.
 
-On 64-bit with PCID support, CR3 switches carry no TLB flush cost. The round trip cost is expected to drop to sub-100 cycles, as the allocator logic itself is approximately 5-10 cycles.
 Cache Behavior
 
-The entire allocator fits within a standard 32KB L1 instruction cache. This contributes directly to the low jitter observed in benchmarks.
+The entire allocator fits within a standard 32KB L1 instruction cache. This contributes directly to the low stddev observed in benchmarks.
 
 A notable observation: under heap pressure, allocation cost occasionally measures below steady state. This is consistent with LIFO free list cache locality — recently freed blocks are returned first and remain hot in L1 data cache, making the subsequent allocation faster than a cold steady state access.
 Fragmentation
@@ -80,19 +82,18 @@ Limitations
 
 What's Next
 
-The 64-bit port is the priority. With PCID support and a wider address space, the Fibonacci size class scheme (32, 64, 96, 128 ... 4096) becomes viable, tightening worst-case fragmentation to under 25%. The same design, in the environment it was built for.
+The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to reduce worst-case internal fragmentation below 25%.
 
-Images of tests of <4KB allocation and frees can be seen below:
+Below here are the test run images of the heap with <4KB blocks.
 
-<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/ff08392d-4fad-4fe8-8d07-c36fd4936ceb" />
+<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/ae9112e6-717e-490c-9bd9-a8413093b70a" />
 
-<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/ea6f9f03-7ad9-46fc-92ac-b971ed911b30" />
+We see here the same data as written in the top section. With the avg cycles for malloc and free being 26 cycles.
 
-Below are tests made where we test the allocation of blocks bigger than 4KB to see how it handles them, the result is the following:
+<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/f3f48c76-9496-4053-b57a-e6941bf60182" />
 
-<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/3553bbf5-4e37-47b2-b78e-4040bd9ff807" />
-<img width="1043" height="782" alt="image" src="https://github.com/user-attachments/assets/dfbf5b54-1e48-44b6-8331-caf57711ca62" />
-<img width="1210" height="907" alt="image" src="https://github.com/user-attachments/assets/8df72b3d-0cbd-4e45-88b5-de2a20118c2d" />
-In the images above we clearly see the mechanism working, around 6100 to 6500 cycles for one page but then if we allocate more we get cheaper pages in the ange of 1000 to 1300 cycles.
+As we can see the avg and stddev stay consistant through runs.
 
-All these tests were taken at different times.
+<img width="808" height="606" alt="image" src="https://github.com/user-attachments/assets/04857a9c-601c-4024-b664-4c06937ca197" />
+
+
