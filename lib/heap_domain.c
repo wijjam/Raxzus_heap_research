@@ -108,7 +108,6 @@ void* heap_domain_alloc(heap_domain_t* domain) {
         return ptr;
     }
 
-
     // If the free list is empty we need to back this domain with a new physical page.
     if (domain->next_free_block == NULL) {
 
@@ -232,7 +231,6 @@ void* kmalloc_large(uint32_t size) {
     uint32_t pages = (size + 4 + 4095) / 4096;
 
 
-
     uint32_t virt_start;
 
     if (large_domain.next_free_virt != NULL) {
@@ -354,5 +352,5 @@ void kfree_heap(void* ptr) {
     else if (addr >= 0x50000000 && addr < 0x60000000) heap_domain_free(&heap_1k,  ptr);
     else if (addr >= 0x60000000 && addr < 0x70000000) heap_domain_free(&heap_2k,  ptr);
     else if (addr >= 0x70000000 && addr < 0x80000000) heap_domain_free(&heap_4k,  ptr);
-    else if (addr >= 0x80000000 && addr)                       kfree_large(ptr);
+    else if (addr >= 0x80000000)                       kfree_large(ptr);
 }
