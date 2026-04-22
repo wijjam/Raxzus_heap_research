@@ -79,8 +79,6 @@ Memory Protection
 
 Each domain has its own page directory. The MMU enforces domain boundaries in hardware. A pointer from the 64-byte domain cannot reach the 512-byte domain's memory regardless of software behavior.
 
-Kernel stack lives at 0xC0000000+, heap domains at 0x10000000–0x80000000. Stack-heap collision is architecturally impossible — not probabilistically unlikely, not canary-protected, impossible.
-
 Per-process isolation follows the same pattern. Each process receives the same virtual layout backed by different physical frames. Processes cannot access each other's memory by page table construction.
 Large Allocations
 Large allocation cost is O(n) where n is the number of 4KB pages required. First page costs approximately 200–738 cycles, subsequent pages approximately 1047–1770 cycles per page as page table structures are established.
