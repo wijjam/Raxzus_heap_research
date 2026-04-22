@@ -8,7 +8,15 @@ Status: Prototype — 32-bit, single core
 
 [![DOI](https://zenodo.org/badge/1215019950.svg)](https://doi.org/10.5281/zenodo.19697609)
 
-To the author's knowledge, no prior work describes a heap allocator using separate page directories per size class with kernel address space double mapping, making this the first of its kind.
+To the author's knowledge, no prior work describes a heap allocator using 
+separate page directories per size class with kernel address space double 
+mapping, making this the first of its kind.
+
+Note: After initial publication, related systems were identified that use 
+subsets of these techniques: SLAB_VIRTUAL (virtual partitioning without 
+separate page directories), xMP (EPT-based isolation by security domain 
+rather than size class), and KPTI (dual CR3 for user/kernel isolation). 
+None combine the complete Raxzus Flow architecture.
 
 Raxzus Flow — A Novel MMU-Backed Domain Allocation Method
 
