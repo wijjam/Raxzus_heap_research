@@ -110,13 +110,6 @@ void* heap_domain_alloc(heap_domain_t* domain) {
 
 
 
-    // Convert the domain's virtual page directory pointer to its physical address.
-    // CR3 must always hold a physical address — the CPU uses it before virtual
-    // translation is possible.
-    uint32_t phys_cr3 = (uint32_t)domain->page_directory - 0xC0000000;
-
-
-
     // If the free list is empty we need to back this domain with a new physical page.
     if (domain->next_free_block == NULL) {
 
@@ -239,9 +232,6 @@ void* kmalloc_large(uint32_t size) {
 
     // How many 4 KB pages do we need for the user data plus the 4-byte header?
     uint32_t pages = (size + 4 + 4095) / 4096;
-
-
-    uint32_t phys_cr3 = (uint32_t)large_domain.page_directory - 0xC0000000;
 
 
     uint32_t virt_start;
