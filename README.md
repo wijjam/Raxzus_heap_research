@@ -23,7 +23,7 @@ heap_4k	4096 bytes	0x70000000
 
 Each domain has its own page directory. When an allocation is requested, the allocator uses our multi mapped functionality and, pops the free list head and returns. The entire operation is O(1) by construction — there is no searching, no coalescing, no walking of any structure.
 
-Each domain's physical frames are mapped into both the domain's own page directory and the kernel's page directory at the same time. This means returned pointers stay valid in kernel space without needing a CR3 switch. The fast path — when the free list has blocks available — never touches CR3 at all. Ín the new design it was found that cr3 switching is not necissary at all, now the page maping, freeing and allocation all happens in one cr3 but they are still seperated by cr3 dirs.
+Each domain's physical frames are mapped into both the domain's own page directory and the kernel's page directory at the same time. This means returned pointers stay valid in kernel space without needing a CR3 switch. The fast path — when the free list has blocks available — never touches CR3 at all. CR3 switching is not required at any point. The page_directory pointer passed to map_page is a higher-half virtual address — map_page never dereferences domain virtual addresses, so the kernel CR3 remains active throughout. The separate page directories exist solely for hardware isolation.
 
 kfree derives the correct domain purely from the pointer address. No size argument is needed. No header is read.
 Free List.
@@ -36,7 +36,7 @@ Each domain occupies a 256MB virtual region, sufficient for millions of small bl
 
 Performance
 
-Tests were run on a 32-bit x86 system without PCID support.
+Tests were run on a 32-bit x86 system.
 
 Steady state (free list warm, 32 samples):
 
@@ -45,13 +45,9 @@ Steady state (free list warm, 32 samples):
     O(1) delta (avg): 0 cycles
 Images of this and more tests can be seen at the bottom of the README.
 
-Round trip cost (kmalloc + kfree combined) is 26 +- 2 cycles on 32-bit x86 without PCID.
+Round trip cost (kmalloc + kfree combined) is 26 +- 2 cycles on 32-bit x86.
 
-Fast path on 64-bit with PCID: expected sub-20 cycles since CR3 switch cost disappears.
-
-Slow path on 64-bit with PCID: significantly cheaper since TLB flush on page mapping is eliminated.
-
-When the free list is exhausted, a new physical page is mapped on demand. This slow path costs approximately 5000-6500 cycles and is amortized over N allocations where N = 4096 / block_size.
+When the free list is exhausted, a new physical page is mapped on demand. This slow path costs approximately 738–1770 cycles depending on page table state, dominated by PMM frame allocation and page table writes.
 
 Cache Behavior
 
@@ -60,7 +56,7 @@ The entire allocator fits within a standard 32KB L1 instruction cache. This cont
 A notable observation: under heap pressure, allocation cost occasionally measures below steady state. This is consistent with LIFO free list cache locality — recently freed blocks are returned first and remain hot in L1 data cache, making the subsequent allocation faster than a cold steady state access.
 Fragmentation
 
-Internal fragmentation is bounded by size class geometry. Worst case is just under 50% on 32-bit (a 65-byte allocation consuming a 128-byte block). In practice the average case is significantly lower.
+Internal fragmentation is bounded by size class geometry. Worst case is just under 50% on 32-bit (a 65-byte allocation consuming a 128-byte block). In practice the average case is lower.
 
 External fragmentation does not occur. Blocks within a domain are fixed size — there are no adjacent free blocks of different sizes to fragment.
 Memory Protection
@@ -71,18 +67,15 @@ Kernel stack lives at 0xC0000000+, heap domains at 0x10000000–0x80000000. Stac
 
 Per-process isolation follows the same pattern. Each process receives the same virtual layout backed by different physical frames. Processes cannot access each other's memory by page table construction.
 Large Allocations
-
-Large allocation cost is approximately 738 cycles per page, dominated by page table mapping overhead.
+Large allocation cost is O(n) where n is the number of 4KB pages required. First page costs approximately 200–738 cycles, subsequent pages approximately 1047–1770 cycles per page as page table structures are established.
 Limitations
 
     Large allocations carry a 4-byte inline header
-    Physical frames are not returned to the PMM on large free (prototype limitation)
-    //Without PCID, CR3 switching cost dominates the cycle count (fixed in latest)
     No multicore support yet — planned for the 64-bit port
 
 What's Next
 
-The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to atempt to reduce worst-case internal fragmentation below 25%.
+The 64-bit port will use a finer-grained size class scheme with 8-byte alignment to attempt to reduce worst-case internal fragmentation below 25%.
 
 Below here are the test run images of the heap with <4KB blocks.
 
