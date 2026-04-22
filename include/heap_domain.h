@@ -1,6 +1,7 @@
 // Copyright (c) 2026 William Berglind
 // Raxzus Flow — MMU-backed domain heap allocator
 // Licensed under the Apache License 2.0
+// https://github.com/wijjam/Raxzus_heap_research
 
 // heap_domain.h
 #ifndef HEAP_DOMAIN_H

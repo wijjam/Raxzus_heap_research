@@ -1,0 +1,17 @@
+Raxzus Flow — A Novel MMU-Backed Domain Allocation Method
+
+Author:
+  William Berglind (wijjam)
+  https://github.com/wijjam
+
+Date:
+  April 2026
+
+Description:
+Raxzus Flow is a novel heap allocator using per-size-class
+page directories for hardware isolation, developed as part
+of the RaxzusOS custom x86 kernel project.
+
+License:
+  Apache License 2.0
+  See LICENSE file for details.
