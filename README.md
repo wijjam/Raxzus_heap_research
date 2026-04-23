@@ -6,6 +6,18 @@ Author: William B.
 Date: April 2026
 Status: Prototype — 32-bit, single core
 
+[![DOI](https://zenodo.org/badge/1215019950.svg)](https://doi.org/10.5281/zenodo.19697609)
+
+To the author's knowledge, no prior work describes a heap allocator using 
+separate page directories per size class with kernel address space double 
+mapping, making this the first of its kind.
+
+Note: After initial publication, related systems were identified that use 
+subsets of these techniques: SLAB_VIRTUAL (virtual partitioning without 
+separate page directories), xMP (EPT-based isolation by security domain 
+rather than size class), and KPTI (dual CR3 for user/kernel isolation). 
+None combine the complete Raxzus Flow architecture.
+
 Raxzus Flow — A Novel MMU-Backed Domain Allocation Method
 
 Raxzus Flow is the name of the allocation method. This document describes its first implementation in RaxzusOS, a custom x86 32-bit kernel.
@@ -66,8 +78,6 @@ External fragmentation does not occur. Blocks within a domain are fixed size —
 Memory Protection
 
 Each domain has its own page directory. The MMU enforces domain boundaries in hardware. A pointer from the 64-byte domain cannot reach the 512-byte domain's memory regardless of software behavior.
-
-Kernel stack lives at 0xC0000000+, heap domains at 0x10000000–0x80000000. Stack-heap collision is architecturally impossible — not probabilistically unlikely, not canary-protected, impossible.
 
 Per-process isolation follows the same pattern. Each process receives the same virtual layout backed by different physical frames. Processes cannot access each other's memory by page table construction.
 Large Allocations
