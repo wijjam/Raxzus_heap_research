@@ -1,33 +1,36 @@
      Copyright (c) 2026 William Berglind
      Raxzus Flow   MMU backed domain heap allocator
      Licensed under the Apache License 2.0
-     
+
+# Raxzus Flow   A Novel MMU Backed Domain Allocation Method
+
 Author: William B.
 Date: April 2026
 Status: Prototype    32-bit, single core
 
 [![DOI](https://zenodo.org/badge/1215019950.svg)](https://doi.org/10.5281/zenodo.19697609)
 
-To the author's knowledge, no prior work describes a heap allocator using 
-separate page directories per size class with kernel address space double 
-mapping, making this the first of its kind.
+     To the author's knowledge, no prior work describes a heap allocator using 
+     separate page directories per size class with kernel address space double 
+     mapping, making this the first of its kind.
+     
+     Note: After initial publication, related systems were identified that use 
+     subsets of these techniques: SLAB_VIRTUAL (virtual partitioning without 
+     separate page directories), xMP (EPT based isolation by security domain 
+     rather than size class), and KPTI (dual CR3 for user/kernel isolation). 
+     None combine the complete Raxzus Flow architecture.
 
-Note: After initial publication, related systems were identified that use 
-subsets of these techniques: SLAB_VIRTUAL (virtual partitioning without 
-separate page directories), xMP (EPT based isolation by security domain 
-rather than size class), and KPTI (dual CR3 for user/kernel isolation). 
-None combine the complete Raxzus Flow architecture.
-
-Raxzus Flow   A Novel MMU Backed Domain Allocation Method
 
 Raxzus Flow is the name of the allocation method. This document describes its first implementation in RaxzusOS, a custom x86  32-bit kernel.
 
 This is a novel heap allocator implemented in a custom x86  32-bit kernel (RaxzusOS). The core idea is simple: instead of using software data structures to manage allocations, we delegate that responsibility to the hardware MMU itself.
 
 Virtual address regions encode size class directly. The address of a pointer tells the allocator everything it needs to know   no per allocation metadata is stored for small allocations.
-Design
+
+## Design
 
 The heap is divided into seven size class domains:
+```
 Domain	Block Size	Virtual Region
 heap_64	64 bytes	0x10000000
 heap_128	128 bytes	0x20000000
@@ -36,6 +39,7 @@ heap_512	512 bytes	0x40000000
 heap_1k	1024 bytes	0x50000000
 heap_2k	2048 bytes	0x60000000
 heap_4k	4096 bytes	0x70000000
+```
 
 Each domain has its own page directory. When an allocation is requested, the allocator uses the multi mapped functionality and, pops the free list head and returns. The entire operation is O(1) by construction   there is no searching, no coalescing, no walking of any structure.
 
@@ -50,7 +54,7 @@ This is a LIFO free list. The most recently freed block is the next to be alloca
 
 Each domain occupies a 256MB virtual region, sufficient for millions of small block allocations before virtual exhaustion.
 
-Performance
+## Performance
 
 Tests were run on a  32-bit x86 system.
 
@@ -65,7 +69,7 @@ Round trip avg cost (kmalloc + kfree combined) is approximately 27 cycles on  32
 
 When the free list is exhausted, a new physical page is mapped on demand. This slow path costs approximately 738–1770 cycles depending on page table state, dominated by PMM frame allocation and page table writes.
 
-Cache Behavior
+## Cache Behavior
 
 The entire allocator fits within a standard 32KB L1 instruction cache. This contributes directly to the low stddev observed in benchmarks.
 
@@ -83,14 +87,15 @@ Per process isolation follows the same pattern. Each process receives the same v
 
 Fault Elimination: Physical frames are mapped when the LIFO empties, before any pointer is returned to the caller. This eliminates demand paging page faults entirely   the slow path is triggered by an empty free list, not by a hardware exception. Traditional demand paged allocators pay 10,000+ cycles for a fault handler round trip. Raxzus Flow's worst case is 600–700 cycles with no exception overhead.
 
-Large Allocations
+## Large Allocations
+
 Large allocation cost is O(n) where n is the number of 4KB pages required. First page costs approximately 200–738 cycles, subsequent pages approximately 1047–1770 cycles per page as page table structures are established.
 Limitations
 
     Large allocations carry a 4 byte inline header
     No multicore support yet   planned for the 64 bit port
 
-What's Next
+## What's Next
 
 Optimizing the PMM to go from a nestled loop search for each new page to using a linked list LIFO, this should make worst path take less cycles.
 The 64 bit port will use a finer grained size class scheme with 8 byte alignment to attempt to reduce worst case internal fragmentation below 25%.
