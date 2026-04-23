@@ -3,9 +3,15 @@
 #include "../include/vga.h"
 
 // Used as the timer
-static inline uint32_t rdtsc(void) {
+static inline uint32_t rdtsc_start(void) {
     uint32_t lo;
-    asm volatile ("rdtsc" : "=a"(lo) : : "edx");
+    asm volatile ("lfence\nrdtsc" : "=a"(lo) : : "edx", "memory");
+    return lo;
+}
+
+static inline uint32_t rdtsc_end(void) {
+    uint32_t lo;
+    asm volatile ("rdtsc\nlfence" : "=a"(lo) : : "edx", "memory");
     return lo;
 }
 
@@ -73,11 +79,11 @@ void cmd_memtest_v1(void) {
     uint32_t frag_samples[32];
     uint32_t frag_min = 0xFFFFFFFF, frag_max = 0, frag_sum = 0;
     for (int s = 0; s < 32; s++) {
-        uint32_t t1 = rdtsc();
+        uint32_t t1 = rdtsc_start();
         uint32_t* p = kmalloc(1024);
         *(volatile uint32_t*)p = 42;
         kfree(p);
-        uint32_t t2 = rdtsc();
+        uint32_t t2 = rdtsc_end();
         uint32_t d = t2 - t1;
         frag_samples[s] = d;
         if (d < frag_min) frag_min = d;
@@ -110,11 +116,11 @@ void cmd_memtest_v1(void) {
     uint32_t clean_samples[32];
     uint32_t clean_min = 0xFFFFFFFF, clean_max = 0, clean_sum = 0;
     for (int s = 0; s < 32; s++) {
-        uint32_t t1 = rdtsc();
+        uint32_t t1 = rdtsc_start();
         uint32_t* p = kmalloc(1024);
         *(volatile uint32_t*)p = 42;
         kfree(p);
-        uint32_t t2 = rdtsc();
+        uint32_t t2 = rdtsc_end();
         uint32_t d = t2 - t1;
         clean_samples[s] = d;
         if (d < clean_min) clean_min = d;
@@ -127,6 +133,12 @@ void cmd_memtest_v1(void) {
         int32_t diff = (int32_t)clean_samples[s] - (int32_t)clean_avg;
         clean_var += diff * diff;
     }
+
+
+    uint32_t tid1 = rdtsc_start(); 
+    uint32_t tid2 = rdtsc_end(); 
+    kprintf("The empty call is %d\n", tid2-tid1);
+
     clean_var /= 31;
     kprintf("CLEAN       min=%d max=%d avg=%d stddev=%d cycles\n", clean_min, clean_max, clean_avg, isqrt(clean_var));
     kprintf("O(1) delta (avg): %d cycles\n", (int32_t)frag_avg - (int32_t)clean_avg);
@@ -189,24 +201,24 @@ void cmd_memtest_v2(void) {
 
     kprintf_yellow("\n  Timing: kmalloc cost per page\n");
     asm volatile("cli");
-    uint32_t t0 = rdtsc();
+    uint32_t t0 = rdtsc_start();
     void* tbuf = kmalloc(4096);
-    uint32_t t1 = rdtsc();
+    uint32_t t1 = rdtsc_end();
     asm volatile("sti");
     kprintf("    1 page  (4 KB) : %d cycles\n", t1 - t0);
 
     asm volatile("cli");
-    t0 = rdtsc();
+    t0 = rdtsc_start();
     void* tbuf8 = kmalloc(8 * 4096);
-    t1 = rdtsc();
+    t1 = rdtsc_end();
     asm volatile("sti");
     kprintf("    8 pages (32 KB): %d cycles  (per-page: %d)\n",
             t1 - t0, (t1 - t0) / 8);
 
     asm volatile("cli");
-    t0 = rdtsc();
+    t0 = rdtsc_start();
     void* tbig = kmalloc(1024 * 1024);
-    t1 = rdtsc();
+    t1 = rdtsc_end();
     asm volatile("sti");
     kprintf("    256 pages (1MB): %d cycles  (per-page: %d)\n",
             t1 - t0, (t1 - t0) / 256);
