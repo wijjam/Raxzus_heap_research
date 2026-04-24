@@ -1,6 +1,10 @@
      Copyright (c) 2026 William Berglind
      Raxzus Flow   MMU backed domain heap allocator
      Licensed under the Apache License 2.0
+     
+## Disclaimer: 
+This started as a hobby kernel project. I thought the MMU was underused at the heap level and wanted to see if the idea worked. It did. I published it because to my knowledge nobody had done it this way before. The 64-bit port is coming, multicore is coming, more tests are coming. Follow the repo if you're curious where it goes.
+
 
 # Raxzus Flow   A Novel MMU Backed Domain Allocation Method
 
@@ -102,20 +106,10 @@ The 64 bit port will use a finer grained size class scheme with 8 byte alignment
 
 Below here are the test run images of the heap with 1024 domain blocks.
 
-<img width="1043" height="782" alt="image" src="https://github.com/user attachments/assets/fd801e31 e528 4624 9b3c af2e26691518" />
+<img width="977" height="733" alt="image" src="https://github.com/user-attachments/assets/531dae44-6e81-4dc4-a982-5fb02ebbb8b6" />
 
 
-We see here the same data as written in the top section. With the avg cycles for malloc and free being 26 cycles.
-
-<img width="1210" height="907" alt="image" src="https://github.com/user attachments/assets/d5f66bcf 82b8 4318 913a 745e3fd62218" />
-
-As we can see the avg and stddev stay consistant through runs.
-
-Below are the >4KB allocation tests:
-
-<img width="1043" height="782" alt="image" src="https://github.com/user attachments/assets/cfc0d29c dfd3 4d3b ac98 bedc703669c2" />
-<img width="1043" height="782" alt="image" src="https://github.com/user attachments/assets/9e5e69e3 d254 44e2 81ac 10b9019237d2" />
-<img width="1043" height="782" alt="image" src="https://github.com/user attachments/assets/85299970 f563 4b48 8afe 373c9e7ee7c7" />
+We see here the same data as written in the top section. We can see it being delta between fragmented and clean around 0 to 3 cycles
 
 
 
