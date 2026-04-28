@@ -1,5 +1,5 @@
 // Copyright (c) 2026 William Berglind
-// Raxzus Flow — MMU-backed domain heap allocator
+// Raxzus Flow - MMU-backed domain heap allocator
 // Licensed under the Apache License 2.0
 // https://github.com/wijjam/Raxzus_heap_research
 
@@ -103,7 +103,7 @@ void* heap_domain_alloc(heap_domain_t* domain) {
 
 
     if (domain->next_free_block != NULL) {
-        // Fast path — no CR3 switch needed
+        // Fast path - no CR3 switch needed
         void* ptr = domain->next_free_block;
         domain->next_free_block = (void*)(*(uint32_t*)ptr);
         return ptr;
@@ -136,7 +136,7 @@ void* heap_domain_alloc(heap_domain_t* domain) {
     invlpg(virt);
 
     // Initialise the free list inside the newly mapped page.
-    // No separate metadata is allocated — each free block stores the virtual
+    // No separate metadata is allocated - each free block stores the virtual
     // address of the next free block in its own first 4 bytes.
     // When the block is handed to the caller those 4 bytes become user data.
     // This is why per-allocation overhead is exactly zero bytes.
@@ -148,25 +148,27 @@ void* heap_domain_alloc(heap_domain_t* domain) {
 
     // The last block in the page terminates the list with NULL.
     uint32_t last_block = virt + ((domain->blocks_per_page - 1) * domain->block_size);
-    *(uint32_t*)last_block = 0; // NULL — end of free list
+    *(uint32_t*)last_block = 0; // NULL - end of free list
 
     // Point the domain's free list head at the first block in the new page.
     domain->next_free_block = (void*)virt;
 
     // Advance the domain's virtual cursor so the next page expansion lands
-    // immediately after this one — preserving virtual contiguity.
+    // immediately after this one - preserving virtual contiguity.
     domain->next_virt_addr += 4096;
     
 
-    // POP the head of the free list — O(1), one pointer read.
+    // POP the head of the free list O(1), one pointer read.
     // ptr is the block we are about to return to the caller.
     void* ptr = domain->next_free_block;
 
     // The first 4 bytes of ptr hold the address of the next free block.
-    // Advance the head — this is the entire allocation algorithm.
+    // Advance the head - this is the entire allocation algorithm.
     domain->next_free_block = (void*)(*(uint32_t*)ptr);
 
     return ptr;
+
+    
 }
 
 
@@ -224,6 +226,8 @@ static void init_large_domain(void) {
 // Returns a pointer to usable memory; the 4 bytes before it hold the
 // page count so kfree_large can unmap exactly the right number of pages.
 void* kmalloc_large(uint32_t size) {
+    // WIll become faster with pmm update, from pmm being nestled for loop to a LIFO.
+    
     if (size == 0) return NULL;
 
     // How many 4 KB pages do we need for the user data plus the 4-byte header?
@@ -241,7 +245,7 @@ void* kmalloc_large(uint32_t size) {
             large_domain.next_free_virt = (void*)(*(uint32_t*)candidate);
             large_unmap_page(virt_start, 1);  // free the hostage frame
         } else {
-            // Slot too small — skip it, fall through to fresh virtual space.
+            // Slot too small - skip it, fall through to fresh virtual space.
             // The slot stays in the LIFO for a future smaller allocation.
             virt_start = large_domain.next_virt_addr;
             large_domain.next_virt_addr += pages * 4096;
@@ -271,7 +275,7 @@ void* kmalloc_large(uint32_t size) {
     *(uint32_t*)virt_start = pages;
 
 
-    // Return pointer past the header — this is what the caller sees.
+    // Return pointer past the header - this is what the caller sees.
     return (void*)(virt_start + sizeof(uint32_t));
 }
 
@@ -305,12 +309,12 @@ void kfree_large(void* ptr) {
     uint32_t real_start = (uint32_t)ptr - sizeof(uint32_t);
     uint32_t pages = *(uint32_t*)real_start;
 
-    // Free pages 1..N-1 — page 0 stays mapped so we can write the LIFO
+    // Free pages 1..N-1 - page 0 stays mapped so we can write the LIFO
     // chain pointer into it while it still has physical backing.
     for (uint32_t i = 1; i < pages; i++)
         large_unmap_page(real_start + (i * 4096), 1);
 
-    // Page 0 is still mapped — store chain pointer at offset 0, page count at offset 4.
+    // Page 0 is still mapped - store chain pointer at offset 0, page count at offset 4.
     *(uint32_t*)real_start       = (uint32_t)large_domain.next_free_virt;
     *((uint32_t*)real_start + 1) = pages;
     large_domain.next_free_virt  = (void*)real_start;
