@@ -99,6 +99,7 @@ Limitations
     Large allocations carry a 4 byte inline header
     No multicore support yet   planned for the 64 bit port
 
+More to come regarding Large Allocations
 ## What's Next
 
 Optimizing the PMM to go from a nestled loop search for each new page to using a linked list LIFO, this should make worst path take less cycles.
