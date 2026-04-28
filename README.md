@@ -113,5 +113,6 @@ Below here are the test run images of the heap with 1024 domain blocks.
 We see here the same data as written in the top section. We can see it being delta between fragmented and clean around 0 to 3 cycles
 
 
-
+<img width="977" height="733" alt="image" src="https://github.com/user-attachments/assets/271d077c-4ac5-4e03-bc72-cce5252511e0" />
+Above is the image of large allocs currently.
 
