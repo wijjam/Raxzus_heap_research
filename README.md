@@ -18,11 +18,15 @@ Status: Prototype    32-bit, single core
      separate page directories per size class with kernel address space double 
      mapping, making this the first of its kind.
      
-     Note: After initial publication, related systems were identified that use 
-     subsets of these techniques: SLAB_VIRTUAL (virtual partitioning without 
-     separate page directories), xMP (EPT based isolation by security domain 
-     rather than size class), and KPTI (dual CR3 for user/kernel isolation). 
-     None combine the complete Raxzus Flow architecture.
+     Note: After initial publication, related work was identified that uses
+     subsets of these techniques: BiBOP (address-derived size classes, a
+     tradition from 1970s Lisp systems), SLAB_VIRTUAL (virtual partitioning
+     without separate page directories), xMP (EPT-based isolation by security
+     domain rather than size class), and KPTI (dual CR3 for user/kernel
+     isolation).
+     None combine the complete Raxzus Flow architecture. Where BiBOP derives
+     metadata at page granularity, Raxzus Flow extends the idea to fixed
+     256MB virtual domains, each backed by its own page directory.
 
 
 Raxzus Flow is the name of the allocation method. This document describes its first implementation in RaxzusOS, a custom x86  32-bit kernel.
